@@ -13,3 +13,4 @@ Cellloading loads the data from the excel files into matlab to compute everythin
 
 Afterwards all the plots were made who are in the directory storage3/manus/.
 
+A metal running wheel (from Lafayette Instruments with the model name 80860W), which had a diameter of 36 centimeters from. Along with a rotary encoder (with the model LPD3806-600BM-G5-24C) were used
