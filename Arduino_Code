@@ -1,0 +1,191 @@
+// Define the pulses per revolution (PPR) of your encoder
+const int PPR = 600;  // Replace this with the actual PPR of your LPD3806 encoder
+const int stepsPerRevolution = PPR * 4;  // 4 state changes per pulse (quadrature)
+
+// Wheel circumference in centimeters (for speed calculation)
+const float wheelCircumference = 60.0; // cm    (IT SHOULD BE 113.2cms) SPEED VALUES ARE WRONG!!!
+
+// Variables to store the revolution count and previous states
+int stepCount = 0;    // Tracks the number of steps in the current revolution
+int totalStepCount = 0; // Tracks the total number of steps for speed calculation
+int revCountClockwise = 0;     // Tracks the number of clockwise revolutions
+int revCountCounterClockwise = 0;  // Tracks the number of counterclockwise revolutions
+int totalRevolutions = 0;  // Tracks the total number of revolutions (independent of direction)
+int prevInputState2 = HIGH;  // Stores the previous state of pin 2
+int prevInputState4 = HIGH;  // Stores the previous state of pin 4
+
+// Timer variables for speed calculation
+unsigned long lastTime = 0; // Time when speed was last calculated
+const int interval = 1000;   // Interval in milliseconds (1 second)
+float speedRPM = 0;          // Variable to hold speed in RPM
+float speedKmh = 0;          // Variable to hold speed in km/h
+
+// Variables for reward system
+const int valvePin = 7;        // Pin connected to the valve
+unsigned long valveOpenTime = 0;    // Time when the valve was opened
+const unsigned long valveDuration = 500;  // Valve open duration (in milliseconds)
+bool valveOpen = false;        // Flag to indicate if valve is currently open
+
+// New addition: Pin 8 for Open Ephys I/O Board connection
+const int ephysPin = 8;  // Pin connected to Open Ephys I/O board
+const float speedThresholdKmh = 0.36;  // Speed threshold updated to 10cm/s
+
+// New addition: Pin 6 to deliver voltage when the valve is open
+const int indicatorPin = 6;  // Pin to provide a constant signal when the valve is open
+const unsigned long indicatorMinDuration = 1000; // Minimum duration (1 second) for Pin 6 HIGH
+unsigned long indicatorEndTime = 0; // Tracks when to turn off indicatorPin after valve closes
+
+// New variables for timing logic
+unsigned long speedAboveThresholdStartTime = 0;  // Start time when speed is above the threshold
+unsigned long lastRewardTime = 0;  // Tracks the time when the last reward was given
+const unsigned long requiredAboveThresholdTime = 10000;  // Required time above threshold to open valve (10 seconds)
+const unsigned long rewardCooldown = 10000;  // Minimum time between rewards (5 seconds)
+bool speedAboveThreshold = false;  // Tracks if the speed is above threshold
+
+// New addition: Pin 10 for buzzer
+const int buzzerPin = 10;  // Pin connected to the buzzer
+
+void setup() {
+  Serial.begin(9600);
+
+  pinMode(2, INPUT_PULLUP);
+  pinMode(4, INPUT_PULLUP);
+
+  pinMode(12, OUTPUT);
+  pinMode(11, OUTPUT);
+  pinMode(valvePin, OUTPUT);
+  pinMode(ephysPin, OUTPUT);
+  pinMode(indicatorPin, OUTPUT);
+  pinMode(buzzerPin, OUTPUT);  // Set buzzer pin as output
+
+  digitalWrite(valvePin, LOW);
+  digitalWrite(ephysPin, LOW);
+  digitalWrite(indicatorPin, LOW);
+  digitalWrite(buzzerPin, LOW);  // Ensure buzzer is off initially
+
+  Serial.println("Initial Counts:");
+  Serial.print("Clockwise Revolutions: ");
+  Serial.println(revCountClockwise);
+  Serial.print("Counterclockwise Revolutions: ");
+  Serial.println(revCountCounterClockwise);
+}
+
+void loop() {
+  int inputState2 = digitalRead(2);
+  int inputState4 = digitalRead(4);
+
+  if (inputState2 != prevInputState2 || inputState4 != prevInputState4) {
+    if (prevInputState2 == HIGH && inputState2 == LOW) {
+      if (inputState4 == HIGH) {
+        stepCount++;
+        totalStepCount++;
+      } else {
+        stepCount--;
+        totalStepCount--;
+      }
+    }
+if (prevInputState4 == HIGH && inputState4 == LOW) {
+  if (inputState2 == HIGH) {
+    stepCount--;
+    totalStepCount--;
+  } else {
+    stepCount++;
+    totalStepCount++;
+  }
+}
+
+if (stepCount >= stepsPerRevolution) {
+  stepCount = 0;
+  revCountClockwise++;
+  totalRevolutions++;
+} else if (stepCount <= -stepsPerRevolution) {
+  stepCount = 0;
+  revCountCounterClockwise++;
+  totalRevolutions++;
+}
+
+  }
+
+  prevInputState2 = inputState2;
+  prevInputState4 = inputState4;
+
+  // Calculate speed every second
+  if (millis() - lastTime >= interval) {
+    speedRPM = (abs(totalStepCount) / (float)stepsPerRevolution) * 60;
+    speedKmh = (speedRPM * wheelCircumference) / 100000 * 60;
+Serial.print("Speed (RPM): ");
+Serial.println(speedRPM);
+Serial.print("Speed (km/h): ");
+Serial.println(speedKmh);
+
+totalStepCount = 0;
+lastTime = millis();
+
+// Check if speed is above the threshold
+if (speedKmh >= speedThresholdKmh) {
+  digitalWrite(ephysPin, HIGH);
+  Serial.println("Speed threshold reached, Pin 8 HIGH.");
+
+  // Start or maintain the timer if speed is above threshold
+  if (!speedAboveThreshold) {
+    speedAboveThresholdStartTime = millis();
+    speedAboveThreshold = true;
+  }
+} else {
+  digitalWrite(ephysPin, LOW);
+  Serial.println("Speed below threshold, Pin 8 LOW.");
+
+  // Reset the timer if speed falls below threshold
+  speedAboveThreshold = false;
+  speedAboveThresholdStartTime = 0;
+}
+
+  }
+
+  // Check if the speed has been consistently above threshold for the required time
+  if (speedAboveThreshold && 
+      (millis() - speedAboveThresholdStartTime >= requiredAboveThresholdTime) && 
+      !valveOpen && 
+      (millis() - lastRewardTime >= rewardCooldown)) {
+digitalWrite(valvePin, HIGH);
+digitalWrite(indicatorPin, HIGH);
+digitalWrite(buzzerPin, HIGH);  // Turn on the buzzer
+valveOpenTime = millis();
+indicatorEndTime = millis() + indicatorMinDuration;
+valveOpen = true;
+lastRewardTime = millis();  // Update the last reward time
+
+Serial.println("Valve Opened! Reward given after sustained speed.");
+
+// Reset the threshold timer so next reward also requires 10 seconds
+speedAboveThresholdStartTime = millis();
+
+  }
+
+  // Close the valve after the duration has passed
+  if (valveOpen && millis() - valveOpenTime >= valveDuration) {
+    digitalWrite(valvePin, LOW);
+    digitalWrite(buzzerPin, LOW);  // Turn off the buzzer
+    valveOpen = false;
+    Serial.println("Valve Closed.");
+  }
+
+  // Keep indicatorPin HIGH for at least 1 second after the valve opens
+  if (!valveOpen && millis() >= indicatorEndTime) {
+    digitalWrite(indicatorPin, LOW);
+  }
+
+  // Write to pin 12 based on the state of pin 2
+  if (inputState2 == HIGH) {
+    digitalWrite(12, HIGH);
+  } else {
+    digitalWrite(12, LOW);
+  }
+
+  // Write to pin 11 based on the state of pin 4
+  if (inputState4 == HIGH) {
+    digitalWrite(11, HIGH);
+  } else {
+    digitalWrite(11, LOW);
+  }
+}
