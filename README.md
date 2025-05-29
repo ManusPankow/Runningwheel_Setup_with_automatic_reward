@@ -11,6 +11,6 @@ plot_whaticutoutschaukeln is then used to ensure that the filtering worked. It i
 
 Cellloading loads the data from the excel files into matlab to compute everything needed for the plots. DeprxTime is used to create dictionaries for sessions for some of the stats out of the excel sheets. detect_rotary_encoder_activity and extractAnimalAndTrialFromFileName are needed functions. 
 
-Afterwards all the plots were made who are in the directory storage3/manus/.
+Afterwards all the plots were made that are in the directory storage3/manus/.
 
 A metal running wheel (from Lafayette Instruments with the model name 80860W), which had a diameter of 36 centimeters from. Along with a rotary encoder (with the model LPD3806-600BM-G5-24C) were used
